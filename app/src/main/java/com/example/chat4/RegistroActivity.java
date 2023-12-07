@@ -1,25 +1,25 @@
 package com.example.chat4;
 
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
-
-import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
-import android.view.MenuItem;
+import android.text.TextUtils;
+import android.util.Patterns;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.firebase.Firebase;
-import com.google.firebase.firestore.DocumentReference;
-import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.auth.AuthResult;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
 
 import java.util.HashMap;
-import java.util.Map;
 
 public class RegistroActivity extends AppCompatActivity {
     EditText editNombre;
@@ -27,70 +27,105 @@ public class RegistroActivity extends AppCompatActivity {
     EditText editCorreo;
     EditText editContraseña;
     Button btnRegistro;
-    private FirebaseFirestore mfirestore;
+
+    FirebaseAuth firebaseAuth;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_registro);
 
-        this.setTitle("Registro exitoso");
-        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-        mfirestore = FirebaseFirestore.getInstance();
-
         editNombre = findViewById(R.id.editNombre);
         editApellido = findViewById(R.id.editApellido);
         editCorreo = findViewById(R.id.editCorreo);
         editContraseña = findViewById(R.id.editContraseña);
         btnRegistro = findViewById(R.id.btnRegistro);
-
+        
+        firebaseAuth = FirebaseAuth.getInstance();
+        
         btnRegistro.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View v) {
-                String nombre = editNombre.getText().toString();
-                String apellido = editApellido.getText().toString();
-                String correo = editCorreo.getText().toString();
-                String contraseña = editContraseña.getText().toString();
-
-                if (nombre.isEmpty() || apellido.isEmpty() || correo.isEmpty() || contraseña.isEmpty()) {
-                    Toast.makeText(RegistroActivity.this, "Por favor completa todos los campos", Toast.LENGTH_SHORT).show();
-                } else {
-                    registros(nombre, apellido, correo, contraseña);
-                }
-            }
+            public void onClick(View v) { ValidarDatos();}
         });
+
+
     }
 
-    private void registros(String nombre, String apellido, String correo, String contraseña) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("Nombre", nombre);
-        map.put("Apellido", apellido);
-        map.put("Correo", correo);
-        map.put("Contraseña", contraseña);
+    private void ValidarDatos() {
+        String nombre = editNombre.getText().toString();
+        String apellido = editApellido.getText().toString();
+        String correo= editCorreo.getText().toString();
+        String contarseña = editContraseña.getText().toString();
+        
+        if (TextUtils.isEmpty(nombre) || TextUtils.isEmpty(apellido) ||
+        TextUtils.isEmpty(correo) || TextUtils.isEmpty(contarseña)){
+            Toast.makeText(this, "Por favor, complete todos los campos", Toast.LENGTH_SHORT).show();
+            return;    
+        }
+        
+        if (!Patterns.EMAIL_ADDRESS.matcher(correo).matches()){
+            Toast.makeText(this, "Ingrese un correo electrónico válido", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-        mfirestore.collection("Registro").add(map)
-                .addOnSuccessListener(new OnSuccessListener<DocumentReference>() {
+        RegistrarUsuario(nombre, apellido, correo, contarseña);
+    }
+
+    private void RegistrarUsuario(String nombre, String apellido, String correo, String contarseña) {
+        firebaseAuth.createUserWithEmailAndPassword(correo, contarseña)
+                .addOnSuccessListener(new OnSuccessListener<AuthResult>() {
                     @Override
-                    public void onSuccess(DocumentReference documentReference) {
-                        Toast.makeText(getApplicationContext(), "Registro exitoso", Toast.LENGTH_SHORT).show();
-                        finish(); // Finaliza la actividad después del registro exitoso
+                    public void onSuccess(AuthResult authResult) {
+                        // Registro exitoso
+                        Toast.makeText(RegistroActivity.this, "Registro exitoso", Toast.LENGTH_SHORT).show();
+
+                        // Si deseas guardar la información del usuario en Firebase Realtime Database:
+                        GuardarInformacionEnDatabase(authResult.getUser().getUid(), nombre, apellido, correo, contarseña);
+
+                        // Redirige a la actividad de inicio o realiza cualquier otra acción necesaria
+                        // Ejemplo:
+                        startActivity(new Intent(RegistroActivity.this, MenuPrincipalActivity.class));
+                        finish();
                     }
                 })
                 .addOnFailureListener(new OnFailureListener() {
                     @Override
                     public void onFailure(@NonNull Exception e) {
-                        Toast.makeText(getApplicationContext(), "Error al Registrarse", Toast.LENGTH_SHORT).show();
+                        // Error en el registro
+                        Toast.makeText(RegistroActivity.this, "Error en el registro: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                     }
                 });
     }
 
-    @Override
-    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
-        // Manejar el clic en la flecha de retroceso
-        if (item.getItemId() == android.R.id.home) {
-            finish(); // Finaliza la actividad al hacer clic en la flecha de retroceso
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
+    private void GuardarInformacionEnDatabase(String uid, String nombre, String apellido, String correo, String contarseña) {
+        DatabaseReference databaseReference = FirebaseDatabase.getInstance().getReference("Usuarios");
+
+        HashMap<String, Object> userData = new HashMap<>();
+        userData.put("nombre", nombre);
+        userData.put("apellido", apellido);
+        userData.put("correo", correo);
+        userData.put("contraseña", contarseña);
+
+        databaseReference.child(uid).setValue(userData)
+                .addOnSuccessListener(new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void aVoid) {
+                        // Información del usuario guardada exitosamente
+                    }
+                })
+                .addOnFailureListener(new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        // Error al guardar la información del usuario
+                    }
+                });
     }
+    @Override
+    public boolean onSupportNavigateUp() {
+        onBackPressed();
+        return super.onSupportNavigateUp();
+    }
+
+
 }
+
